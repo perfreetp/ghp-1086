@@ -64,6 +64,7 @@ export class RoomManager {
       createdAt: Date.now(),
       replayData: [],
       punishmentAssignments: [],
+      roundToken: 0,
     };
 
     room.scores[hostId] = 0;
@@ -263,6 +264,7 @@ export class RoomManager {
     room.isPaused = false;
     room.pauseStartedAt = undefined;
     room.pauseAccumulatedMs = 0;
+    room.roundToken++;
     const roundScores: Record<string, number> = {};
     room.players.forEach(p => { roundScores[p.id] = 0; });
     room.roundScores.push(roundScores);
@@ -278,6 +280,7 @@ export class RoomManager {
           misTouchPlayers: [],
           countdown: 3,
           activeBuzzer: undefined,
+          roundToken: room.roundToken,
         };
         break;
       case 'colorTrap':
@@ -286,6 +289,7 @@ export class RoomManager {
           question: generateColorTrapQuestion(),
           answers: {},
           countdown: 3,
+          roundToken: room.roundToken,
         };
         break;
       case 'trueFalse':
@@ -295,6 +299,7 @@ export class RoomManager {
           clicked: {},
           scores: {},
           countdown: 3,
+          roundToken: room.roundToken,
         };
         break;
       case 'rhythm':
@@ -305,6 +310,7 @@ export class RoomManager {
           bpm: 110,
           countdown: 3,
           startTime: undefined,
+          roundToken: room.roundToken,
         };
         break;
     }
@@ -320,6 +326,7 @@ export class RoomManager {
   }
 
   handleBuzzPress(room: Room, player: Player): { success: boolean; misTouch: boolean; active?: boolean } {
+    if (room.isPaused) return { success: false, misTouch: false };
     const state = room.gameState;
     if (!state || state.phase !== 'playing') return { success: false, misTouch: false };
     if (player.isSpectator || player.eliminated) return { success: false, misTouch: false };
@@ -368,6 +375,7 @@ export class RoomManager {
   }
 
   handleColorTrapAnswer(room: Room, player: Player, answer: 'match' | 'mismatch'): { correct: boolean; timeBonus: number } {
+    if (room.isPaused) return { correct: false, timeBonus: 0 };
     const state = room.gameState;
     if (!state || state.phase !== 'playing') return { correct: false, timeBonus: 0 };
     if (player.isSpectator || player.eliminated) return { correct: false, timeBonus: 0 };
@@ -388,17 +396,18 @@ export class RoomManager {
     return { correct, timeBonus };
   }
 
-  handleTrueFalseClick(room: Room, player: Player, buttonId: number): { correct: boolean; points: number } {
+  handleTrueFalseClick(room: Room, player: Player, buttonId: number): { correct: boolean; delta: number } {
+    if (room.isPaused) return { correct: false, delta: 0 };
     const state = room.gameState;
-    if (!state || state.phase !== 'playing') return { correct: false, points: 0 };
-    if (player.isSpectator || player.eliminated) return { correct: false, points: 0 };
+    if (!state || state.phase !== 'playing') return { correct: false, delta: 0 };
+    if (player.isSpectator || player.eliminated) return { correct: false, delta: 0 };
 
     const button = state.buttons.find((b: any) => b.id === buttonId);
-    if (!button) return { correct: false, points: 0 };
+    if (!button) return { correct: false, delta: 0 };
 
     if (!state.clicked[player.id]) state.clicked[player.id] = [];
     const clicked = state.clicked[player.id];
-    if (clicked.some((c: any) => c.buttonId === buttonId)) return { correct: false, points: 0 };
+    if (clicked.some((c: any) => c.buttonId === buttonId)) return { correct: false, delta: 0 };
 
     const now = Date.now();
     clicked.push({ buttonId, time: now });
@@ -407,10 +416,11 @@ export class RoomManager {
     this.addRoundScore(room, player.id, points);
     room.replayData.push({ type: 'tfClick', playerId: player.id, timestamp: now, data: { correct: button.isReal, buttonId, points } });
 
-    return { correct: button.isReal, points };
+    return { correct: button.isReal, delta: points };
   }
 
   handleRhythmHit(room: Room, player: Player, noteId: number): { judgment: 'perfect' | 'good' | 'miss' | 'none'; points: number } {
+    if (room.isPaused) return { judgment: 'none', points: 0 };
     const state = room.gameState;
     if (!state || state.phase !== 'playing') return { judgment: 'none', points: 0 };
     if (player.isSpectator || player.eliminated) return { judgment: 'none', points: 0 };
@@ -552,6 +562,11 @@ export class RoomManager {
   nextBuzzQuestion(room: Room): boolean {
     if (room.currentGame !== 'buzz' || !room.gameState) return false;
 
+    room.roundToken++;
+    room.pauseAccumulatedMs = 0;
+    room.pauseStartedAt = undefined;
+    room.isPaused = false;
+
     const usedIds = new Set<number>();
     if (room.gameState.question?.id) usedIds.add(room.gameState.question.id);
 
@@ -563,6 +578,7 @@ export class RoomManager {
       misTouchPlayers: [],
       countdown: room.settings.countdownDuration || 3,
       activeBuzzer: undefined,
+      roundToken: room.roundToken,
     };
     return true;
   }

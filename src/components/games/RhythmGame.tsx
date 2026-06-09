@@ -57,6 +57,7 @@ export default function RhythmGame({ isMobile, isHost, player }: RhythmGameProps
   const playerId = useAppStore((s) => s.playerId);
   const players = useAppStore((s) => s.players);
   const scores = useAppStore((s) => s.scores);
+  const isPaused = useAppStore((s) => s.isPaused);
 
   const storeGameState = gameStateFromStore ?? {
     phase: 'countdown' as const,
@@ -85,6 +86,9 @@ export default function RhythmGame({ isMobile, isHost, player }: RhythmGameProps
   const hitIdRef = useRef(0);
   const trackAreaRef = useRef<HTMLDivElement>(null);
   const hitNoteIdsRef = useRef<Set<number>>(new Set());
+  const frozenElapsedRef = useRef<number>(0);
+  const resumeOffsetRef = useRef<number>(0);
+  const wasPausedRef = useRef<boolean>(false);
 
   const storeNotes = storeGameState.notes ?? [];
 
@@ -130,7 +134,14 @@ export default function RhythmGame({ isMobile, isHost, player }: RhythmGameProps
 
     const animate = () => {
       const now = performance.now();
-      const elapsed = now - startTime;
+
+      if (isPaused) {
+        // 暂停状态：冻结时间，不推进音符，不产生miss，不产生判定
+        animationRef.current = requestAnimationFrame(animate);
+        return;
+      }
+
+      const elapsed = now - startTime - resumeOffsetRef.current;
 
       const height = trackAreaRef.current?.clientHeight ?? 600;
       const hitY = height - HIT_LINE_OFFSET;
@@ -188,7 +199,21 @@ export default function RhythmGame({ isMobile, isHost, player }: RhythmGameProps
     return () => {
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
     };
-  }, [storeGameState.phase, startTime]);
+  }, [storeGameState.phase, startTime, isPaused]);
+
+  useEffect(() => {
+    if (storeGameState.phase !== 'playing') return;
+    if (isPaused) {
+      wasPausedRef.current = true;
+      frozenElapsedRef.current = performance.now();
+    } else {
+      if (wasPausedRef.current && frozenElapsedRef.current > 0 && startTime !== null) {
+        resumeOffsetRef.current += performance.now() - frozenElapsedRef.current;
+      }
+      wasPausedRef.current = false;
+      frozenElapsedRef.current = 0;
+    }
+  }, [isPaused, storeGameState.phase, startTime]);
 
   useEffect(() => {
     if (storeGameState.phase === 'playing' && localCountdown > 0) {
@@ -213,6 +238,7 @@ export default function RhythmGame({ isMobile, isHost, player }: RhythmGameProps
 
   const handleLaneHit = useCallback(
     (lane: number) => {
+      if (isPaused) return;
       setActiveLanes((prev) => {
         const next = [...prev];
         next[lane] = true;
@@ -282,7 +308,7 @@ export default function RhythmGame({ isMobile, isHost, player }: RhythmGameProps
         return prev.map((n) => (n.id === note.id ? { ...n, hit: true } : n));
       });
     },
-    [storeGameState.phase, playerId]
+    [storeGameState.phase, playerId, isPaused]
   );
 
   useEffect(() => {

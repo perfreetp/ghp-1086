@@ -326,9 +326,13 @@ function beginCountdown(roomId: string) {
   const room = roomManager.getRoomById(roomId);
   if (!room || !room.gameState) return;
 
+  const expectedToken = room.roundToken;
+
   let count = room.settings.countdownDuration || 3;
   const tick = () => {
     if (!room.gameState) return;
+    if (room.roundToken !== expectedToken) return;
+    if (room.status !== 'playing') return;
     if (room.isPaused) {
       setTimeout(tick, 500);
       return;
@@ -337,10 +341,11 @@ function beginCountdown(roomId: string) {
     emitToRoom(roomId, 'gameStateUpdate', room.gameState);
     count--;
     if (count < 0) {
+      if (room.roundToken !== expectedToken) return;
       roomManager.setGamePhase(room, 'playing');
       roomManager.setRoundStartTime(room);
       emitToRoom(roomId, 'gameStateUpdate', room.gameState);
-      startRoundTimer(roomId);
+      startRoundTimer(roomId, expectedToken);
     } else {
       setTimeout(tick, 1000);
     }
@@ -348,15 +353,17 @@ function beginCountdown(roomId: string) {
   tick();
 }
 
-function startRoundTimer(roomId: string) {
+function startRoundTimer(roomId: string, tokenAtStart?: number) {
   const room = roomManager.getRoomById(roomId);
   if (!room || !room.gameConfig || !room.gameState) return;
 
+  const expectedToken = tokenAtStart ?? room.roundToken;
   const roundTime = room.gameConfig.roundTime;
   const startAt = room.gameState.roundStartTime || Date.now();
 
   const tick = () => {
     if (!room.gameState || !room.gameConfig) return;
+    if (room.roundToken !== expectedToken) return;
     if (room.status !== 'playing') return;
 
     const effectiveElapsed = roomManager.getEffectiveElapsed(room, startAt);
@@ -370,7 +377,7 @@ function startRoundTimer(roomId: string) {
     }
 
     if (remaining <= 0 && !room.isPaused) {
-      endRound(roomId);
+      endRound(roomId, expectedToken);
       return;
     }
 
@@ -393,19 +400,23 @@ function runRound(roomId: string) {
   setTimeout(() => beginCountdown(roomId), 300);
 }
 
-function endRound(roomId: string) {
+function endRound(roomId: string, tokenAtStart?: number) {
   const room = roomManager.getRoomById(roomId);
   if (!room || !room.gameConfig) return;
+  const expectedToken = tokenAtStart ?? room.roundToken;
+
   roomManager.setGamePhase(room, 'ended');
   emitToRoom(roomId, 'gameStateUpdate', room.gameState);
 
   setTimeout(() => {
+    if (room.roundToken !== expectedToken) return;
     const result = roomManager.endRound(room);
     emitToRoom(roomId, 'roundEnd', result);
     sendRoomState(roomId);
 
     if (room.currentRound >= room.totalRounds) {
       setTimeout(() => {
+        if (room.roundToken !== expectedToken) return;
         const final = roomManager.getFinalResult(room);
         room.status = 'result';
         emitToRoom(roomId, 'gameEnd', final);

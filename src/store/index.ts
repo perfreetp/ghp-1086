@@ -32,6 +32,7 @@ export interface AppState {
   setFinalResult: (r: FinalResult) => void;
   setPunishment: (p: PunishmentAssignment) => void;
   setError: (err: string | null) => void;
+  setIsHost: (v: boolean) => void;
   clearAll: () => void;
   reset: () => void;
 }
@@ -69,22 +70,30 @@ const createInitialState = () => ({
 export const useAppStore = create<AppState>((set, get) => ({
   ...createInitialState(),
 
-  setRoom: (data: any) => set({
-    roomId: data.id,
-    roomCode: data.code,
-    players: data.players || [],
-    status: data.status || 'waiting',
-    currentGame: data.currentGame,
-    gameConfig: data.gameConfig,
-    gameState: data.gameState,
-    totalRounds: data.totalRounds || 0,
-    currentRound: data.currentRound || 0,
-    scores: data.scores || {},
-    isPaused: data.isPaused || false,
-    soundEnabled: data.soundEnabled ?? true,
-    settings: data.settings || defaultSettings,
-    punishmentAssignments: data.punishmentAssignments || [],
-  }),
+  setRoom: (data: any) => {
+    const currentPlayerId = get().playerId;
+    const meInList = data.players?.find((p: Player) => p.id === currentPlayerId);
+    const calculatedIsHost = meInList?.isHost ?? data.hostId === currentPlayerId ?? false;
+    set({
+      roomId: data.id,
+      roomCode: data.code,
+      players: data.players || [],
+      status: data.status || 'waiting',
+      currentGame: data.currentGame,
+      gameConfig: data.gameConfig,
+      gameState: data.gameState,
+      totalRounds: data.totalRounds || 0,
+      currentRound: data.currentRound || 0,
+      scores: data.scores || {},
+      isPaused: data.isPaused || false,
+      soundEnabled: data.soundEnabled ?? true,
+      settings: data.settings || defaultSettings,
+      punishmentAssignments: data.punishmentAssignments || [],
+      isHost: calculatedIsHost,
+    });
+  },
+
+  setIsHost: (v: boolean) => set({ isHost: v }),
 
   setPlayer: (playerId: string, roomId: string, roomCode: string, isHost: boolean) => set({
     playerId, roomId, roomCode, isHost,

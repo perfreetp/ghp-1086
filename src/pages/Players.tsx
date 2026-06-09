@@ -18,7 +18,7 @@ export default function Players() {
   };
 
   const handleToggleSpectator = (p: Player) => {
-    emit('toggleSpectator', { playerId: p.id });
+    emit('toggleSpectator', { playerId: p.id, isSpectator: !p.isSpectator });
     setShowMenu(null);
   };
 

@@ -53,6 +53,7 @@ export interface Room {
   createdAt: number;
   replayData: ReplayEvent[];
   punishmentAssignments: PunishmentAssignment[];
+  roundToken: number;
 }
 
 export interface PunishmentAssignment {

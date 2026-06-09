@@ -46,27 +46,7 @@ export default function Room() {
       navigate('/');
       return;
     }
-
-    const unsub1 = on('roomState', (data: any) => {
-      setRoom(data);
-    });
-
-    const unsub2 = on('kicked', () => {
-      disconnectSocket();
-      clearAll();
-      navigate('/');
-    });
-
-    const unsub3 = on('error', (data: { code: string; message: string }) => {
-      setError(data.message);
-    });
-
-    return () => {
-      unsub1();
-      unsub2();
-      unsub3();
-    };
-  }, [roomCode, playerId, navigate, setRoom, clearAll, setError]);
+  }, [roomCode, playerId, navigate]);
 
   useEffect(() => {
     if (status === 'playing') {
