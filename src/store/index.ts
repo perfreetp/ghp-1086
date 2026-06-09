@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Player, GameConfig, RoomSettings, RoundResult, FinalResult, PunishmentCard, GameType } from '../../shared/types';
+import type { Player, GameConfig, RoomSettings, RoundResult, FinalResult, PunishmentCard, GameType, PunishmentAssignment } from '../../shared/types';
 import { AVATARS } from '../../shared/types';
 
 export interface AppState {
@@ -21,7 +21,8 @@ export interface AppState {
   settings: RoomSettings;
   lastRoundResult: RoundResult | null;
   finalResult: FinalResult | null;
-  latestPunishment: { playerId: string; playerName: string; card: PunishmentCard } | null;
+  latestPunishment: PunishmentAssignment | null;
+  punishmentAssignments: PunishmentAssignment[];
   error: string | null;
 
   setRoom: (data: any) => void;
@@ -29,9 +30,10 @@ export interface AppState {
   setGameState: (state: any) => void;
   setRoundResult: (r: RoundResult) => void;
   setFinalResult: (r: FinalResult) => void;
-  setPunishment: (p: { playerId: string; playerName: string; card: PunishmentCard }) => void;
+  setPunishment: (p: PunishmentAssignment) => void;
   setError: (err: string | null) => void;
   clearAll: () => void;
+  reset: () => void;
 }
 
 const defaultSettings: RoomSettings = {
@@ -40,27 +42,32 @@ const defaultSettings: RoomSettings = {
   autoStart: false,
 };
 
-export const useAppStore = create<AppState>((set) => ({
-  roomId: null,
-  roomCode: null,
-  playerId: null,
+const createInitialState = () => ({
+  roomId: null as string | null,
+  roomCode: null as string | null,
+  playerId: null as string | null,
   isHost: false,
-  players: [],
-  status: 'waiting',
-  currentGame: null,
-  gameConfig: null,
-  gameState: null,
+  players: [] as Player[],
+  status: 'waiting' as const,
+  currentGame: null as GameType | null,
+  gameConfig: null as GameConfig | null,
+  gameState: null as any,
   totalRounds: 0,
   currentRound: 0,
-  scores: {},
-  roundScores: [],
+  scores: {} as Record<string, number>,
+  roundScores: [] as Record<string, number>[],
   isPaused: false,
   soundEnabled: true,
   settings: defaultSettings,
-  lastRoundResult: null,
-  finalResult: null,
-  latestPunishment: null,
-  error: null,
+  lastRoundResult: null as RoundResult | null,
+  finalResult: null as FinalResult | null,
+  latestPunishment: null as PunishmentAssignment | null,
+  punishmentAssignments: [] as PunishmentAssignment[],
+  error: null as string | null,
+});
+
+export const useAppStore = create<AppState>((set, get) => ({
+  ...createInitialState(),
 
   setRoom: (data: any) => set({
     roomId: data.id,
@@ -76,6 +83,7 @@ export const useAppStore = create<AppState>((set) => ({
     isPaused: data.isPaused || false,
     soundEnabled: data.soundEnabled ?? true,
     settings: data.settings || defaultSettings,
+    punishmentAssignments: data.punishmentAssignments || [],
   }),
 
   setPlayer: (playerId: string, roomId: string, roomCode: string, isHost: boolean) => set({
@@ -84,16 +92,17 @@ export const useAppStore = create<AppState>((set) => ({
 
   setGameState: (state: any) => set({ gameState: state }),
   setRoundResult: (r: RoundResult) => set({ lastRoundResult: r }),
-  setFinalResult: (r: FinalResult) => set({ finalResult: r }),
-  setPunishment: (p) => set({ latestPunishment: p }),
-  setError: (err) => set({ error: err }),
-  clearAll: () => set({
-    roomId: null, roomCode: null, playerId: null, isHost: false,
-    players: [], status: 'waiting', currentGame: null, gameConfig: null,
-    gameState: null, totalRounds: 0, currentRound: 0, scores: {}, roundScores: [],
-    isPaused: false, lastRoundResult: null, finalResult: null, latestPunishment: null,
-    error: null,
+  setFinalResult: (r: FinalResult) => set({
+    finalResult: r,
+    punishmentAssignments: r.punishments ? [...r.punishments] : get().punishmentAssignments,
   }),
+  setPunishment: (p) => set(s => ({
+    latestPunishment: p,
+    punishmentAssignments: [...s.punishmentAssignments, p],
+  })),
+  setError: (err) => set({ error: err }),
+  clearAll: () => set(createInitialState()),
+  reset: () => set(createInitialState()),
 }));
 
 export function getRandomAvatar(): string {

@@ -46,10 +46,20 @@ export interface Room {
   scores: Record<string, number>;
   roundScores: Record<string, number>[];
   isPaused: boolean;
+  pauseStartedAt?: number;
+  pauseAccumulatedMs: number;
   soundEnabled: boolean;
   settings: RoomSettings;
   createdAt: number;
   replayData: ReplayEvent[];
+  punishmentAssignments: PunishmentAssignment[];
+}
+
+export interface PunishmentAssignment {
+  playerId: string;
+  playerName: string;
+  card: PunishmentCard;
+  drawnAt: number;
 }
 
 export interface ReplayEvent {
@@ -158,7 +168,7 @@ export interface FinalResult {
     totalScore: number;
     roundsWon: number;
   }[];
-  punishments: { playerId: string; card: PunishmentCard }[];
+  punishments: PunishmentAssignment[];
 }
 
 export const AVATARS = [

@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { useEffect } from "react";
 import Lobby from "@/pages/Lobby";
 import Room from "@/pages/Room";
@@ -18,7 +18,9 @@ function SocketListener() {
   const setFinalResult = useAppStore(s => s.setFinalResult);
   const setPunishment = useAppStore(s => s.setPunishment);
   const setError = useAppStore(s => s.setError);
+  const reset = useAppStore(s => s.reset);
   const soundEnabled = useAppStore(s => s.soundEnabled);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const u1 = on('roomState', (d: any) => setRoom(d));
@@ -38,8 +40,13 @@ function SocketListener() {
       else if (d?.result?.judgment === 'miss') SFX.miss(soundEnabled);
       else SFX.click(soundEnabled);
     });
-    return () => { u1(); u2(); u3(); u4(); u5(); u6(); u7(); u8(); u9(); };
-  }, [setRoom, setGameState, setRoundResult, setFinalResult, setPunishment, setError, soundEnabled]);
+    const u10 = on('kicked', () => {
+      reset();
+      navigate('/', { replace: true });
+      setError('你已被移出房间');
+    });
+    return () => { u1(); u2(); u3(); u4(); u5(); u6(); u7(); u8(); u9(); u10(); };
+  }, [setRoom, setGameState, setRoundResult, setFinalResult, setPunishment, setError, reset, soundEnabled, navigate]);
 
   return null;
 }

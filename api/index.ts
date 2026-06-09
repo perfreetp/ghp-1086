@@ -65,6 +65,7 @@ function sendRoomState(roomId: string) {
     soundEnabled: room.soundEnabled,
     settings: room.settings,
     gameState: room.gameState,
+    punishmentAssignments: room.punishmentAssignments,
   });
 }
 
@@ -201,15 +202,17 @@ io.on('connection', (socket) => {
   socket.on('pauseGame', () => {
     const rp = roomManager.getPlayerBySocketId(socket.id);
     if (!rp || !rp.player.isHost) return;
-    rp.room.isPaused = true;
-    emitToRoom(rp.room.id, 'gamePaused', null);
+    roomManager.pauseRoom(rp.room);
+    emitToRoom(rp.room.id, 'gamePaused', {
+      remainingTime: rp.room.gameState?.remainingTime,
+    });
     sendRoomState(rp.room.id);
   });
 
   socket.on('resumeGame', () => {
     const rp = roomManager.getPlayerBySocketId(socket.id);
     if (!rp || !rp.player.isHost) return;
-    rp.room.isPaused = false;
+    roomManager.resumeRoom(rp.room);
     emitToRoom(rp.room.id, 'gameResumed', null);
     sendRoomState(rp.room.id);
   });
@@ -259,6 +262,7 @@ io.on('connection', (socket) => {
       case 'tf_click': {
         const result = roomManager.handleTrueFalseClick(room, player, payload.buttonId);
         socket.emit('gameActionResult', { action, result });
+        emitToRoom(room.id, 'gameStateUpdate', room.gameState);
         sendRoomState(room.id);
         break;
       }
@@ -270,18 +274,14 @@ io.on('connection', (socket) => {
       }
       case 'host_next_question': {
         if (player.isHost && room.currentGame === 'buzz') {
-          const gs = room.gameState;
-          if (gs) {
-            gs.activeBuzzer = undefined;
-            const { generateBuzzQuestion } = require('./games/GameEngine');
-            gs.question = generateBuzzQuestion(new Set([gs.question?.id]));
-            gs.answered = [];
-            gs.buzzerPressed = {};
-            gs.misTouchPlayers = [];
-            gs.phase = 'countdown';
-            gs.roundStartTime = undefined;
-            emitToRoom(room.id, 'gameStateUpdate', gs);
-            beginCountdown(room.id);
+          const ok = roomManager.nextBuzzQuestion(room);
+          if (ok) {
+            room.status = 'playing';
+            room.isPaused = false;
+            room.pauseStartedAt = undefined;
+            room.pauseAccumulatedMs = 0;
+            sendRoomState(room.id);
+            setTimeout(() => beginCountdown(room.id), 150);
           }
         }
         break;
@@ -293,17 +293,23 @@ io.on('connection', (socket) => {
     const rp = roomManager.getPlayerBySocketId(socket.id);
     if (!rp) return;
     const card = PUNISHMENT_CARDS[Math.floor(Math.random() * PUNISHMENT_CARDS.length)];
-    emitToRoom(rp.room.id, 'punishmentDrawn', {
+    const assignment = {
       playerId: rp.player.id,
       playerName: rp.player.nickname,
       card,
-    });
+      drawnAt: Date.now(),
+    };
+    rp.room.punishmentAssignments.push(assignment);
+    emitToRoom(rp.room.id, 'punishmentDrawn', assignment);
+    sendRoomState(rp.room.id);
   });
 
   socket.on('getFinalResult', (callback: any) => {
     const rp = roomManager.getPlayerBySocketId(socket.id);
     if (!rp) return callback?.(null);
-    callback?.(roomManager.getFinalResult(rp.room));
+    const result = roomManager.getFinalResult(rp.room);
+    result.punishments = rp.room.punishmentAssignments;
+    callback?.(result);
   });
 
   socket.on('disconnect', () => {
@@ -347,23 +353,23 @@ function startRoundTimer(roomId: string) {
   if (!room || !room.gameConfig || !room.gameState) return;
 
   const roundTime = room.gameConfig.roundTime;
-  const startAt = Date.now();
+  const startAt = room.gameState.roundStartTime || Date.now();
 
   const tick = () => {
     if (!room.gameState || !room.gameConfig) return;
-    if (room.isPaused) {
-      setTimeout(tick, 100);
-      return;
-    }
-    const elapsed = Date.now() - startAt;
-    const remaining = Math.max(0, roundTime - elapsed);
+    if (room.status !== 'playing') return;
+
+    const effectiveElapsed = roomManager.getEffectiveElapsed(room, startAt);
+    const remaining = Math.max(0, roundTime - effectiveElapsed);
     room.gameState.remainingTime = remaining;
 
-    if (room.currentGame === 'rhythm' && room.gameState.startTime) {
-      emitToRoom(roomId, 'gameStateUpdate', room.gameState);
+    if (!room.isPaused) {
+      if (room.currentGame === 'rhythm' && room.gameState.startTime) {
+        emitToRoom(roomId, 'gameStateUpdate', room.gameState);
+      }
     }
 
-    if (remaining <= 0) {
+    if (remaining <= 0 && !room.isPaused) {
       endRound(roomId);
       return;
     }

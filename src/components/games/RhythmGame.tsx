@@ -276,13 +276,7 @@ export default function RhythmGame({ isMobile, isHost, player }: RhythmGameProps
 
         emit('gameAction', {
           action: 'rhythm_hit',
-          payload: {
-            noteId: note.id,
-            lane,
-            judgment: type,
-            points,
-            timestamp: Date.now(),
-          },
+          payload: { noteId: note.id },
         });
 
         return prev.map((n) => (n.id === note.id ? { ...n, hit: true } : n));

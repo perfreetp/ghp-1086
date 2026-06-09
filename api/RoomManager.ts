@@ -58,10 +58,12 @@ export class RoomManager {
       scores: {},
       roundScores: [],
       isPaused: false,
+      pauseAccumulatedMs: 0,
       soundEnabled: true,
       settings: getDefaultSettings(),
       createdAt: Date.now(),
       replayData: [],
+      punishmentAssignments: [],
     };
 
     room.scores[hostId] = 0;
@@ -259,6 +261,8 @@ export class RoomManager {
     room.currentRound++;
     room.status = 'playing';
     room.isPaused = false;
+    room.pauseStartedAt = undefined;
+    room.pauseAccumulatedMs = 0;
     const roundScores: Record<string, number> = {};
     room.players.forEach(p => { roundScores[p.id] = 0; });
     room.roundScores.push(roundScores);
@@ -321,7 +325,8 @@ export class RoomManager {
     if (player.isSpectator || player.eliminated) return { success: false, misTouch: false };
 
     const now = Date.now();
-    const isMisTouch = !state.roundStartTime || (now - state.roundStartTime) < room.settings.misTouchSensitivity;
+    const elapsed = state.roundStartTime ? this.getEffectiveElapsed(room, state.roundStartTime) : 0;
+    const isMisTouch = !state.roundStartTime || elapsed < room.settings.misTouchSensitivity;
 
     if (state.activeBuzzer) {
       return { success: false, misTouch: false, active: false };
@@ -369,7 +374,7 @@ export class RoomManager {
     if (state.answers[player.id]) return { correct: false, timeBonus: 0 };
 
     const now = Date.now();
-    const elapsed = now - (state.roundStartTime || now);
+    const elapsed = state.roundStartTime ? this.getEffectiveElapsed(room, state.roundStartTime) : 0;
     const totalTime = room.gameConfig?.roundTime || 8000;
     const correct = answer === state.question.correctAnswer;
     const timeRatio = Math.max(0, 1 - elapsed / totalTime);
@@ -414,7 +419,7 @@ export class RoomManager {
     const note = state.notes.find((n: any) => n.id === noteId);
     if (!note || note.hit) return { judgment: 'none', points: 0 };
 
-    const elapsed = Date.now() - state.startTime;
+    const elapsed = this.getEffectiveElapsed(room, state.startTime);
     const diff = Math.abs(elapsed - note.startTime);
 
     let judgment: 'perfect' | 'good' | 'miss' = 'miss';
@@ -502,7 +507,7 @@ export class RoomManager {
     return {
       totalRounds: room.totalRounds,
       rankings,
-      punishments: [],
+      punishments: room.punishmentAssignments,
     };
   }
 
@@ -513,11 +518,53 @@ export class RoomManager {
     room.roundScores = [];
     room.gameState = null;
     room.replayData = [];
+    room.isPaused = false;
+    room.pauseStartedAt = undefined;
+    room.pauseAccumulatedMs = 0;
+    room.punishmentAssignments = [];
     room.players.forEach(p => {
       p.score = 0;
       p.eliminated = false;
       room.scores[p.id] = 0;
     });
+  }
+
+  pauseRoom(room: Room): void {
+    if (!room.isPaused) {
+      room.isPaused = true;
+      room.pauseStartedAt = Date.now();
+    }
+  }
+
+  resumeRoom(room: Room): void {
+    if (room.isPaused && room.pauseStartedAt) {
+      room.pauseAccumulatedMs += Date.now() - room.pauseStartedAt;
+      room.pauseStartedAt = undefined;
+      room.isPaused = false;
+    }
+  }
+
+  getEffectiveElapsed(room: Room, startTime: number): number {
+    const now = room.isPaused && room.pauseStartedAt ? room.pauseStartedAt : Date.now();
+    return now - startTime - room.pauseAccumulatedMs;
+  }
+
+  nextBuzzQuestion(room: Room): boolean {
+    if (room.currentGame !== 'buzz' || !room.gameState) return false;
+
+    const usedIds = new Set<number>();
+    if (room.gameState.question?.id) usedIds.add(room.gameState.question.id);
+
+    room.gameState = {
+      phase: 'countdown',
+      question: generateBuzzQuestion(usedIds),
+      buzzerPressed: {},
+      answered: [],
+      misTouchPlayers: [],
+      countdown: room.settings.countdownDuration || 3,
+      activeBuzzer: undefined,
+    };
+    return true;
   }
 
   cleanOldRooms(): void {
